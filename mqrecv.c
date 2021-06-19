@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <sys/types.h>
@@ -22,7 +23,10 @@ struct msqmsg_ds {
 
 int main(int argc, char *argv[])
 {
+	clock_t			begin;
 	ssize_t			bytes;
+	double			elapsed;
+	clock_t			end;
 	int			file_id;
 	const char		*file_name[INPUT_FILE_NAME_NUM_MAX] = {
 					"RecevedFileA.bin",
@@ -43,6 +47,7 @@ int main(int argc, char *argv[])
 	char			*tmp;
 	int			write_size;
 
+	begin = clock();
 	// Check if the input format is valid.
 	if (argc > 1)
 	{
@@ -242,5 +247,8 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	end = clock();
+	elapsed = (double)(end - begin) / CLOCKS_PER_SEC;
+	printf("%lf seconds.\n", elapsed);
 	return 0;
 }
