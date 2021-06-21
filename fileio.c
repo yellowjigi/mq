@@ -32,9 +32,6 @@ long get_file_size(FILE *fp)
 
 int load_block(char *buffer, int size, FILE *fp)
 {
-#ifdef DEBUG
-	printf("%s) size: %d.\n", __FILE__, size);
-#endif
 	if (fread(buffer, size, 1, fp) != 1)
 	{
 		perror("fread failed");
