@@ -7,6 +7,8 @@
 #include <sys/msg.h>
 #include <sys/types.h>
 
+#include "crc.h"
+
 #define DEBUG
 
 #define INPUT_FILE_NAME_NUM_MAX	3
@@ -50,6 +52,10 @@ int main(int argc, char *argv[])
 	long			remaining_size[INPUT_FILE_NAME_NUM_MAX] = { 0, 0, 0 };
 	char			*buffer[INPUT_FILE_NAME_NUM_MAX];
 	int			write_size[INPUT_FILE_NAME_NUM_MAX];
+
+	int			cnt[INPUT_FILE_NAME_NUM_MAX] = { 0, 0, 0 };
+	unsigned short		crc16_received;
+	unsigned short		crc16_computed;
 
 	begin = clock();
 	// Check if the input format is valid.
@@ -117,11 +123,17 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	// Prepare a lookup table to calculate CRC-16.
+	build_table_crc16();
+
 	while ((bytes = msgrcv(msq_id, &msq_msg_ds_buf, MSQ_MSG_BYTES_MAX, 0, 0)) == MSQ_MSG_BYTES_MAX)
 	{
 		// Retrieve the file identifier. mtype must be
 		// greater than 0, so the receiver subtract 1 here.
-		file_id = (int)msq_msg_ds_buf.mtype - 1;
+		file_id = (int)(msq_msg_ds_buf.mtype >> 16) - 1;
+#ifdef DEBUG
+		printf("File ID: %d.\n", file_id);
+#endif
 
 		if (remaining_size[file_id] == 0)
 		{
@@ -150,6 +162,27 @@ int main(int argc, char *argv[])
 		}
 		else
 		{
+			crc16_computed = compute_crc16(msq_msg_ds_buf.mtext, MSQ_MSG_BYTES_MAX);
+			crc16_received = (unsigned short)(msq_msg_ds_buf.mtype & 0xFFFF);
+#ifdef DEBUG
+			//printf("CRC 16 received: 0x%x.\n", crc16_received);
+			//printf("CRC 16 computed: 0x%x.\n", crc16_computed);
+
+			//printf("Byte #01: 0x%x.\n", msq_msg_ds_buf.mtext[0]);
+			//printf("Byte #02: 0x%x.\n", msq_msg_ds_buf.mtext[1]);
+			//printf("Byte #03: 0x%x.\n", msq_msg_ds_buf.mtext[2]);
+			//printf("Byte #05: 0x%x.\n", msq_msg_ds_buf.mtext[4]);
+			//printf("Byte #10: 0x%x.\n", msq_msg_ds_buf.mtext[9]);
+			if (crc16_computed == crc16_received)
+			{
+				printf("CRC 16 verified.\n");
+			}
+			else
+			{
+				printf("CRC 16 different.\n");
+				cnt[file_id]++;
+			}
+#endif
 			// This is the file data for file_id.
 
 			// 1. Write the file data to the corresponding file stream.
@@ -181,6 +214,7 @@ int main(int argc, char *argv[])
 					flag -= (1 << file_id);
 
 					free(buffer[file_id]);
+					break;
 
 					// 3. Check if all the file transfer has been completed.
 					if (flag == 0)
@@ -205,6 +239,11 @@ int main(int argc, char *argv[])
 			}
 		}
 	}
+#ifdef DEBUG
+	printf("File 01: #different CRC: %d.\n", cnt[0]);
+	printf("File 02: #different CRC: %d.\n", cnt[1]);
+	printf("File 03: #different CRC: %d.\n", cnt[2]);
+#endif
 
 	if (bytes == -1)
 	{

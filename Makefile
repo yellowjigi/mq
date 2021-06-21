@@ -11,10 +11,12 @@ LDFLAGS = -lpthread
 
 MQSEND_SRCS = \
 	mqsend.c \
-	fileio.c
+	fileio.c \
+	crc.c
 
 SHARED = \
-	fileio.h
+	fileio.h \
+	crc.h
 
 OBJS = $(MQSEND_SRCS:%.c=%.o)
 

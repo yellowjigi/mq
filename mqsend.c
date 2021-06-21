@@ -8,6 +8,7 @@
 #include <sys/types.h>
 
 #include "fileio.h"
+#include "crc.h"
 
 #define INPUT_FILE_NAME_NUM_MAX	3
 
@@ -19,6 +20,10 @@
 
 #define BUF_SIZE_DEFAULT	(16 * 1024 * 1024) // 16 MiB
 
+#define ERROR_BYTES_NUM_MAX	1000
+
+#define MTYPE_FIELD_OFFSET	16
+
 struct msqmsg_ds {
 	long	mtype;
 	char	mtext[MSQ_MSG_BYTES_MAX];
@@ -26,6 +31,7 @@ struct msqmsg_ds {
 
 struct thread_parms {
 	char	*file_name;
+	char	*error_file_name;
 	int	file_id;
 	int	msq_id;
 };
@@ -47,6 +53,12 @@ void *send_fn(void *arg)
 	char			*tmp;
 	int			i;
 	int			cnt = 0;
+	unsigned short		crc16;
+	int			j;
+	int			bytes_sent;
+	int			buffer_e[ERROR_BYTES_NUM_MAX];
+	int			error_count;
+	int			offset;
 
 	buffer = malloc(sizeof *buffer * BUF_SIZE_DEFAULT);
 
@@ -69,7 +81,7 @@ void *send_fn(void *arg)
 #endif
 
 	// Indicate the file identifier.
-	msq_msg_ds_buf.mtype = parms->file_id;
+	msq_msg_ds_buf.mtype = parms->file_id << MTYPE_FIELD_OFFSET;
 
 	// 1. Send metadata (i.e., the file size).
 	memcpy(msq_msg_ds_buf.mtext, &file_size, sizeof(long));
@@ -80,7 +92,17 @@ void *send_fn(void *arg)
 		pthread_exit((void *)1);
 	}
 
+	// Prepare the error info.
+	if ((error_count = load_error_info(buffer_e, ERROR_BYTES_NUM_MAX, parms->error_file_name)) < 0)
+	{
+		fprintf(stderr, "load_error_info failed.\n");
+		pthread_exit((void *)1);
+	}
+
+
 	read_size = BUF_SIZE_DEFAULT;
+	bytes_sent = 0;
+	j = 0;
 	for (remaining_size = file_size; remaining_size > 0; remaining_size -= read_size)
 	{
 		if (remaining_size < BUF_SIZE_DEFAULT)
@@ -99,20 +121,41 @@ void *send_fn(void *arg)
 		pos = buffer;
 		for (i = 0; i < read_size; i += MSQ_MSG_BYTES_MAX)
 		{
-#ifdef DEBUG
-			cnt++;
-#endif
 			memcpy(msq_msg_ds_buf.mtext, pos + i, MSQ_MSG_BYTES_MAX);
+
+			crc16 = compute_crc16(msq_msg_ds_buf.mtext, MSQ_MSG_BYTES_MAX);
+			//msq_msg_ds_buf.mtype |= (long)crc16;
+			msq_msg_ds_buf.mtype |= crc16;
+#ifdef DEBUG
+			printf("CRC: 0x%x.\n", crc16);
+#endif
+
+			while (j < error_count && bytes_sent + MSQ_MSG_BYTES_MAX > buffer_e[j])
+			{
+				// We should generate error now!
+				offset = buffer_e[j] % MSQ_MSG_BYTES_MAX;
+				msq_msg_ds_buf.mtext[offset] = ~msq_msg_ds_buf.mtext[offset];
+
+				j++;
+			}
 
 			if (msgsnd(parms->msq_id, &msq_msg_ds_buf, MSQ_MSG_BYTES_MAX, 0) != 0)
 			{
 				perror("msgsnd failed");
 				pthread_exit((void *)1);
 			}
+
+			bytes_sent += MSQ_MSG_BYTES_MAX;
+
+			msq_msg_ds_buf.mtype &= 0xFFFF0000;
+#ifdef DEBUG
+			printf("mtype after: 0x%x.\n", (int)msq_msg_ds_buf.mtype);
+#endif
 		}
 	}
 #ifdef DEBUG
-	printf("total %d bytes sent.\n", cnt * MSQ_MSG_BYTES_MAX);
+	printf("File ID %02d: error count %d.\n", parms->file_id, error_count);
+	printf("total %d bytes sent.\n", bytes_sent);
 #endif
 
 	if (fclose(fp) != 0)
@@ -128,6 +171,7 @@ int main(int argc, char *argv[])
 {
 	int			e;
 	char			*file_name[INPUT_FILE_NAME_NUM_MAX];
+	char			*error_file_name[INPUT_FILE_NAME_NUM_MAX];
 	long			file_size;
 	FILE			*fp;
 	int			i;
@@ -143,15 +187,22 @@ int main(int argc, char *argv[])
 	struct thread_parms	parms[INPUT_FILE_NAME_NUM_MAX];
 
 	// Check if the input format is valid.
-	if (argc < 2 || argc > 4)
+	//if (argc < 2 || argc > 4)
+	//{
+	//	printf("Usage: %s <file1> <file2> <file3>\n", argv[0]);
+	//	return 0;
+	//}
+
+	if (argc < 2 || argc > 7)
 	{
-		printf("Usage: %s <file1> <file2> <file3>\n", argv[0]);
+		printf("Usage: %s <file1> <file2> <file3> <error_file1> <error_file2> <error_file3>\n", argv[0]);
 		return 0;
 	}
 
 	for (i = 0; i < INPUT_FILE_NAME_NUM_MAX; i++)
 	{
 		file_name[i] = argv[i + 1];
+		error_file_name[i] = argv[i + 4];
 	}
 
 	if ((ipc_key = ftok(IPC_KEY_PATH, IPC_KEY_PROJ_ID)) == -1)
@@ -175,9 +226,13 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	// Prepare the lookup table for CRC-16.
+	build_table_crc16();
+
 	for (i = 0; i < INPUT_FILE_NAME_NUM_MAX; i++)
 	{
 		parms[i].file_name = file_name[i];
+		parms[i].error_file_name = error_file_name[i];
 		parms[i].file_id = i + 1;
 		parms[i].msq_id = msq_id;
 		if ((e = pthread_create(&worker_thread[i], NULL, send_fn, (void *)&parms[i])) != 0)
@@ -195,6 +250,9 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 	}
+
+	// Release the lookup table for CRC-16.
+	release_table_crc16();
 
 	return 0;
 }

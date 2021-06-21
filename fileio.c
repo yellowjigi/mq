@@ -40,3 +40,37 @@ int load_block(char *buffer, int size, FILE *fp)
 
 	return 0;
 }
+
+int load_error_info(int *buffer, int size, char *file_name)
+{
+	FILE	*fp;
+	int	i;
+	int	read_count;
+
+	if ((fp = fopen(file_name, "r")) == NULL)
+	{
+		perror("fopen failed");
+		return -1;
+	}
+
+	read_count = 0;
+	for (i = 0; i < size; i++)
+	{
+		if (fscanf(fp, "%d", &buffer[i]) == EOF)
+		{
+			break;
+		}
+
+		buffer[i]--;
+
+		read_count++;
+	}
+
+	if (fclose(fp) != 0)
+	{
+		perror("fclose failed");
+		return -1;
+	}
+
+	return read_count;
+}
