@@ -180,42 +180,20 @@ int main(int argc, char *argv[])
 		parms[i].file_name = file_name[i];
 		parms[i].file_id = i + 1;
 		parms[i].msq_id = msq_id;
+		if ((e = pthread_create(&worker_thread[i], NULL, send_fn, (void *)&parms[i])) != 0)
+		{
+			perror("perror_create failed");
+			return 1;
+		}
 	}
 
-	if ((e = pthread_create(&worker_thread[0], NULL, send_fn, (void *)&parms[0])) != 0)
+	for (i = 0; i < INPUT_FILE_NAME_NUM_MAX; i++)
 	{
-		perror("perror_create failed");
-		return 1;
-	}
-
-	if ((e = pthread_create(&worker_thread[1], NULL, send_fn, (void *)&parms[1])) != 0)
-	{
-		perror("perror_create failed");
-		return 1;
-	}
-
-	if ((e = pthread_create(&worker_thread[2], NULL, send_fn, (void *)&parms[2])) != 0)
-	{
-		perror("perror_create failed");
-		return 1;
-	}
-
-	if (pthread_join(worker_thread[0], NULL))
-	{
-		perror("pthread_join failed");
-		return 1;
-	}
-
-	if (pthread_join(worker_thread[1], NULL))
-	{
-		perror("pthread_join failed");
-		return 1;
-	}
-
-	if (pthread_join(worker_thread[2], NULL))
-	{
-		perror("pthread_join failed");
-		return 1;
+		if (pthread_join(worker_thread[i], NULL))
+		{
+			perror("pthread_join failed");
+			return 1;
+		}
 	}
 
 	return 0;
