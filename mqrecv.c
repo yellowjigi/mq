@@ -7,7 +7,7 @@
 #include <sys/msg.h>
 #include <sys/types.h>
 
-//#define DEBUG
+#define DEBUG
 
 #define INPUT_FILE_NAME_NUM_MAX	3
 
@@ -15,10 +15,13 @@
 #define IPC_KEY_PROJ_ID		65
 
 #define MSQ_MSG_NUM_MAX		32
+#define MSQ_MSG_BYTES_MAX	512
+
+#define BUF_SIZE_DEFAULT	(16 * 1024 * 1024) // 16 MiB
 
 struct msqmsg_ds {
 	long	mtype;
-	char	mtext[512];
+	char	mtext[MSQ_MSG_BYTES_MAX];
 };
 
 int main(int argc, char *argv[])
@@ -37,15 +40,16 @@ int main(int argc, char *argv[])
 	int			flag;
 	FILE			*fp[INPUT_FILE_NAME_NUM_MAX];
 	int			i;
+	int			offset[INPUT_FILE_NAME_NUM_MAX];
 	key_t			ipc_key;
 	int			msq_id;
 	struct msqid_ds		msq_id_ds_buf;
 	struct msqmsg_ds	msq_msg_ds_buf;
 	int			msq_msg_bytes_max;
-	char			*pos;
+	char			*pos[INPUT_FILE_NAME_NUM_MAX];
 	long			remaining_size[INPUT_FILE_NAME_NUM_MAX] = { 0, 0, 0 };
-	char			*tmp;
-	int			write_size;
+	char			*buffer[INPUT_FILE_NAME_NUM_MAX];
+	int			write_size[INPUT_FILE_NAME_NUM_MAX];
 
 	begin = clock();
 	// Check if the input format is valid.
@@ -94,10 +98,6 @@ int main(int argc, char *argv[])
 	printf("msg_qbytes: %d.\n", (int)msq_id_ds_buf.msg_qbytes);
 #endif
 
-	//msq_msg_bytes_max = msq_id_ds_buf.msg_qbytes / MSQ_MSG_NUM_MAX;
-	msq_msg_bytes_max = 512;
-	//msq_msg_ds_buf.mtext = (char *)malloc(sizeof(char) * msq_msg_bytes_max); // Normally 512.
-
 	// Set the flag to check later if all the transfer has been completed.
 	flag = (1 << INPUT_FILE_NAME_NUM_MAX) - 1; // 0b111
 
@@ -113,84 +113,56 @@ int main(int argc, char *argv[])
 				perror("msgctl rmid failed");
 			}
 
-			//free(msq_msg_ds_buf.mtext);
-
 			return 1;
 		}
 	}
-#ifdef DEBUG
-		printf("%d) remaining_size[file_id]: %ld.\n", __LINE__, remaining_size[0]);
-#endif
 
-#ifdef DEBUG
-	printf("fopen completed.\n");
-#endif
-	tmp = malloc(sizeof *tmp * 64 * 1024 * 1024);
-	while ((bytes = msgrcv(msq_id, &msq_msg_ds_buf, msq_msg_bytes_max, 0, 0)) == msq_msg_bytes_max)
+	while ((bytes = msgrcv(msq_id, &msq_msg_ds_buf, MSQ_MSG_BYTES_MAX, 0, 0)) == MSQ_MSG_BYTES_MAX)
 	{
 		// Retrieve the file identifier. mtype must be
 		// greater than 0, so the receiver subtract 1 here.
 		file_id = (int)msq_msg_ds_buf.mtype - 1;
-#ifdef DEBUG
-		printf("bytes: %ld.\n", bytes);
-		printf("file_id: %d.\n", file_id);
-		//printf("remaining_size[file_id]: %ld.\n", remaining_size[file_id]);
-		//printf("%ld ", file_size);
-		printf("%hhd ", msq_msg_ds_buf.mtext[0]);
-		printf("%hhd ", msq_msg_ds_buf.mtext[1]);
-		printf("%hhd ", msq_msg_ds_buf.mtext[2]);
-		printf("%hhd ", msq_msg_ds_buf.mtext[3]);
-		printf("%hhd ", msq_msg_ds_buf.mtext[4]);
-		printf("%hhd ", msq_msg_ds_buf.mtext[5]);
-		printf("%hhd ", msq_msg_ds_buf.mtext[6]);
-		printf("%hhd \n", msq_msg_ds_buf.mtext[7]);
-#endif
 
 		if (remaining_size[file_id] == 0)
 		{
 			// This is the first received metadata for file_id.
 
-			// Retrieve the metadata (i.e., the file size).
-			memcpy(&remaining_size[file_id], msq_msg_ds_buf.mtext, sizeof(long));
-			pos = tmp;
-			file_size[file_id] = remaining_size[file_id];
-		}
-		else
-		{
-#ifdef DEBUG
-			printf("%d.\n", __LINE__);
-#endif
-			// This is the file data for file_id.
+			// 1. Create a memory pool.
+			buffer[file_id] = malloc(sizeof *buffer[file_id] * BUF_SIZE_DEFAULT);
 
-			if (remaining_size[file_id] - msq_msg_bytes_max < 0)
+			// 2. Retrieve the metadata (i.e., the file size).
+			memcpy(&remaining_size[file_id], msq_msg_ds_buf.mtext, sizeof(long));
+#ifdef DEBUG
+			printf("File size: %ld.\n", remaining_size[file_id]);
+#endif
+
+			if (remaining_size[file_id] < BUF_SIZE_DEFAULT)
 			{
-				write_size = remaining_size[file_id];
+				write_size[file_id] = remaining_size[file_id];
 			}
 			else
 			{
-				write_size = msq_msg_bytes_max;
+				write_size[file_id] = BUF_SIZE_DEFAULT;
 			}
 
+			pos[file_id] = buffer[file_id];
+			offset[file_id] = 0;
+		}
+		else
+		{
+			// This is the file data for file_id.
+
 			// 1. Write the file data to the corresponding file stream.
-			memcpy(pos, msq_msg_ds_buf.mtext, write_size);
-			pos += write_size;
-			//if (fwrite(msq_msg_ds_buf.mtext, write_size, 1, fp[file_id]) != 1)
-			//{
-			//	if (ferror(fp[file_id]))
-			//	{
-			//		perror("fwrite failed");
-			//		break;
-			//	}
-			//}
-
-			// 2. Now calculate remaining_size.
-			remaining_size[file_id] -= write_size;
-
-			// If it becomes 0, the file copy has been completed
-			// for file_id. Update the flag to mark it as completed.
-			if (remaining_size[file_id] == 0)
+			memcpy(pos[file_id] + offset[file_id], msq_msg_ds_buf.mtext, MSQ_MSG_BYTES_MAX);
+			offset[file_id] += MSQ_MSG_BYTES_MAX;
+			if (offset[file_id] >= write_size[file_id])
 			{
-				if (fwrite(tmp, file_size[file_id], 1, fp[file_id]) != 1)
+				// Buffer is ready. Write it to the file
+				// stream and reset the pointer offset.
+#ifdef DEBUG
+				printf("File ID %02d: %d written.\n", file_id, write_size[file_id]);
+#endif
+				if (fwrite(buffer[file_id], write_size[file_id], 1, fp[file_id]) != 1)
 				{
 					if (ferror(fp[file_id]))
 					{
@@ -199,18 +171,40 @@ int main(int argc, char *argv[])
 					}
 				}
 
-				flag -= (1 << file_id);
-			}
+				// 2. Now calculate remaining_size.
+				remaining_size[file_id] -= write_size[file_id];
 
-			// 3. Check if all the file transfer has been completed.
-			if (flag == 0)
-			{
-				break;
+				// If it becomes 0, the file copy has been completed
+				// for file_id. Update the flag to mark it as completed.
+				if (remaining_size[file_id] == 0)
+				{
+					flag -= (1 << file_id);
+
+					free(buffer[file_id]);
+
+					// 3. Check if all the file transfer has been completed.
+					if (flag == 0)
+					{
+						break;
+					}
+
+				}
+				else
+				{
+					if (remaining_size[file_id] < BUF_SIZE_DEFAULT)
+					{
+						write_size[file_id] = remaining_size[file_id];
+					}
+					else
+					{
+						write_size[file_id] = BUF_SIZE_DEFAULT;
+					}
+				}
+
+				offset[file_id] = 0;
 			}
 		}
 	}
-	
-	//free(msq_msg_ds_buf.mtext);
 
 	if (bytes == -1)
 	{

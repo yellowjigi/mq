@@ -2,3 +2,4 @@
 mqrecv
 mqsend
 *.txt
+*.o
