@@ -1,7 +1,7 @@
 CC = gcc
 
 FLAGS = \
-	-DDEBUG
+	-DTHIS_DEBUG
 
 INCLUDES = -I.
 
@@ -12,11 +12,13 @@ LDFLAGS = -lpthread
 MQSEND_SRCS = \
 	mqsend.c \
 	fileio.c \
-	crc.c
+	crc.c \
+	queue.c
 
 SHARED = \
 	fileio.h \
-	crc.h
+	crc.h \
+	queue.h
 
 OBJS = $(MQSEND_SRCS:%.c=%.o)
 
