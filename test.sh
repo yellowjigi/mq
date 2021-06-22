@@ -2,13 +2,20 @@
 
 origs=(FileA.bin FileB.bin FileC.bin)
 receiveds=(RecevedFileA.bin RecevedFileB.bin RecevedFileC.bin)
+errors=(FileAError.txt FileBError.txt FileCError.txt)
 
 # Clean up.
-rm "${receiveds[@]}"
+for f in "${receiveds[@]}"; do
+	if [ -f $f ]; then
+		rm $f
+	fi
+done
+
+#rm "${receiveds[@]}"
 
 # Do the test.
 ./mqrecv &
-./mqsend "${origs[@]}"
+./mqsend ${origs[@]} ${errors[@]}
 
 # Verify the result.
 for i in 0 1 2; do
