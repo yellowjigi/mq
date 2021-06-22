@@ -1,19 +1,10 @@
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <sys/ipc.h>
-#include <sys/msg.h>
-#include <sys/types.h>
 
 #include "crc.h"
+#include "msq.h"
 
 #define INPUT_FILE_NAME_NUM_MAX	3
-
-#define IPC_KEY_PATH		"/root"
-#define IPC_KEY_PROJ_ID		65
-#define IPC_KEY_PROJ_ID_TX	66
 
 #define MSQ_MSG_NUM_MAX		32
 #define MSQ_MSG_BYTES_MAX	512
@@ -28,17 +19,15 @@ struct msqmsg_ds {
 	char	mtext[MSQ_MSG_BYTES_MAX];
 };
 
-struct thread_parms {
-	char	*file_name;
-	char	*error_file_name;
-	int	file_id;
-	int	msq_id;
-};
-
 int main(int argc, char *argv[])
 {
 	clock_t			begin;
+	char			*buffer[INPUT_FILE_NAME_NUM_MAX];
 	ssize_t			bytes;
+	unsigned short		corrupted_count[INPUT_FILE_NAME_NUM_MAX];
+	unsigned short		crc16_received;
+	unsigned short		crc16_computed;
+	unsigned short		ctl_flag;
 	double			elapsed;
 	clock_t			end;
 	unsigned short		file_id;
@@ -47,29 +36,20 @@ int main(int argc, char *argv[])
 					"RecevedFileB.bin",
 					"RecevedFileC.bin"
 				};
-	long			file_size[INPUT_FILE_NAME_NUM_MAX];
 	int			flag;
 	FILE			*fp[INPUT_FILE_NAME_NUM_MAX];
 	int			i;
-	int			offset[INPUT_FILE_NAME_NUM_MAX];
-	int			total_progress[INPUT_FILE_NAME_NUM_MAX];
 	key_t			ipc_key;
-	int			msq_id;
+	unsigned short		msg_id;
+	int			msq_id_rx;
 	int			msq_id_tx;
-	struct msqid_ds		msq_id_ds_buf;
 	struct msqmsg_ds	msq_msg_ds_buf;
 	struct msqmsg_ds	msq_msg_ds_buf_tx;
-	int			msq_msg_bytes_max;
+	int			offset[INPUT_FILE_NAME_NUM_MAX];
 	char			*pos[INPUT_FILE_NAME_NUM_MAX];
 	long			remaining_size[INPUT_FILE_NAME_NUM_MAX] = { 0, 0, 0 };
-	char			*buffer[INPUT_FILE_NAME_NUM_MAX];
+	int			total_progress[INPUT_FILE_NAME_NUM_MAX];
 	int			write_size[INPUT_FILE_NAME_NUM_MAX];
-
-	unsigned short		corrupted_count[INPUT_FILE_NAME_NUM_MAX];
-	unsigned short		crc16_received;
-	unsigned short		crc16_computed;
-	unsigned short		msg_id;
-	unsigned short		ctl_flag;
 
 	begin = clock();
 
@@ -81,47 +61,17 @@ int main(int argc, char *argv[])
 	}
 
 	// For a receiving channel
-	if ((ipc_key = ftok(IPC_KEY_PATH, IPC_KEY_PROJ_ID)) == -1)
+	if ((msq_id_rx = msq_get(IPC_KEY_PATH, IPC_KEY_PROJ_ID_ATOB)) < 0)
 	{
-		perror("ftok failed\n");
-		return 1;
-	}
-
-	if ((msq_id = msgget(ipc_key, IPC_CREAT | IPC_EXCL | 0644)) == -1)
-	{
-		if (errno == EEXIST)
-		{
-			// The message queue already exists.
-			// Simply retrieve the ID of it.
-			msq_id = msgget(ipc_key, 0);
-		}
-		else
-		{
-			perror("msgget failed");
-			return 1;
-		}
+		fprintf(stderr, "msq_get failed.\n");
+		exit(EXIT_FAILURE);
 	}
 
 	// For a transmitting channel
-	if ((ipc_key = ftok(IPC_KEY_PATH, IPC_KEY_PROJ_ID_TX)) == -1)
+	if ((msq_id_tx = msq_get(IPC_KEY_PATH, IPC_KEY_PROJ_ID_BTOA)) < 0)
 	{
-		perror("ftok failed\n");
-		return 1;
-	}
-
-	if ((msq_id_tx = msgget(ipc_key, IPC_CREAT | IPC_EXCL | 0644)) == -1)
-	{
-		if (errno == EEXIST)
-		{
-			// The message queue already exists.
-			// Simply retrieve the ID of it.
-			msq_id_tx = msgget(ipc_key, 0);
-		}
-		else
-		{
-			perror("msgget failed");
-			return 1;
-		}
+		fprintf(stderr, "msq_get failed.\n");
+		exit(EXIT_FAILURE);
 	}
 
 	// Set the flag to check later if all the transfer has been completed.
@@ -134,7 +84,7 @@ int main(int argc, char *argv[])
 		{
 			perror("fopen failed");
 
-			if (msgctl(msq_id, IPC_RMID, NULL) != 0)
+			if (msgctl(msq_id_rx, IPC_RMID, NULL) != 0)
 			{
 				perror("msgctl rmid failed");
 			}
@@ -148,7 +98,7 @@ int main(int argc, char *argv[])
 
 	// Main thread receives the messages and then
 	// distributes them to the corresponding threads.
-	while ((bytes = msgrcv(msq_id, &msq_msg_ds_buf, MSQ_MSG_BYTES_MAX, 0, 0)) == MSQ_MSG_BYTES_MAX)
+	while ((bytes = msgrcv(msq_id_rx, &msq_msg_ds_buf, MSQ_MSG_BYTES_MAX, 0, 0)) == MSQ_MSG_BYTES_MAX)
 	{
 		// Retrieve the file identifier.
 		// For convenient access to arrays, subtract 1 here.
@@ -326,7 +276,7 @@ int main(int argc, char *argv[])
 	{
 		perror("msgrcv failed");
 
-		if (msgctl(msq_id, IPC_RMID, NULL) != 0)
+		if (msgctl(msq_id_rx, IPC_RMID, NULL) != 0)
 		{
 			perror("msgctl rmid failed");
 		}
@@ -341,7 +291,7 @@ int main(int argc, char *argv[])
 		{
 			perror("fclose failed");
 
-			if (msgctl(msq_id, IPC_RMID, NULL) != 0)
+			if (msgctl(msq_id_rx, IPC_RMID, NULL) != 0)
 			{
 				perror("msgctl rmid failed");
 			}
@@ -350,17 +300,16 @@ int main(int argc, char *argv[])
 		}
 	}
 
-
-	if (msgctl(msq_id, IPC_RMID, NULL) != 0)
+	if (msq_rm(msq_id_rx) < 0)
 	{
-		perror("msgctl rmid failed");
-		return 1;
+		fprintf(stderr, "msq_rm failed.\n");
+		exit(EXIT_FAILURE);
 	}
 
-	if (msgctl(msq_id_tx, IPC_RMID, NULL) != 0)
+	if (msq_rm(msq_id_tx) < 0)
 	{
-		perror("msgctl rmid failed");
-		return 1;
+		fprintf(stderr, "msq_rm failed.\n");
+		exit(EXIT_FAILURE);
 	}
 
 	end = clock();

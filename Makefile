@@ -18,9 +18,11 @@ MQSEND_SRCS = \
 MQRECV_SRCS = \
 	mqrecv.c \
 	fileio.c \
-	crc.c
+	crc.c \
+	msq.c
 
 SHARED = \
+	msq.h \
 	fileio.h \
 	crc.h \
 	queue.h

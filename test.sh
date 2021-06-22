@@ -24,9 +24,11 @@ for i in 0 1 2; do
 
 	set -- $orig
 	md_orig=$1
+	echo "MD5 Checksum for ${origs[$i]}: $md_orig"
 
 	set -- $received
 	md_received=$1
+	echo "MD5 Checksum for ${receiveds[$i]}: $md_received"
 
 	if [ ${md_orig} = ${md_received} ]; then
 		echo Success!
