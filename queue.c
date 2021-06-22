@@ -24,7 +24,6 @@ static int is_empty(struct queue *q)
 	return q == NULL || q->count == 0;
 }
 	
-//void enqueue(struct queue *q, void *value)
 void enqueue(struct queue *q, long value)
 {
 	struct node	*n;
@@ -51,11 +50,9 @@ void enqueue(struct queue *q, long value)
 	pthread_mutex_unlock(&q->lock);
 }
 
-//void *dequeue(struct queue *q)
 long dequeue(struct queue *q)
 {
 	struct node	*n;
-	//void		*val;
 	long		val;
 
 	pthread_mutex_lock(&q->lock);
@@ -105,7 +102,6 @@ void destroy_queue(struct queue *q)
 void print_queue(struct queue *q)
 {
 	struct node	*curr;
-	//long		*val;
 	long		val;
 	unsigned short	file_id;
 	unsigned short	ctl_flag;
@@ -119,12 +115,7 @@ void print_queue(struct queue *q)
 	printf("===========================\n");
 	while (curr)
 	{
-		//val = (long *)(curr->value);
 		val = curr->value;
-		//file_id = (unsigned short)(*val >> 48);
-		//ctl_flag = (unsigned short)(*val >> 32);
-		//msg_id = (unsigned short)(*val >> 16);
-		//crc16 = (unsigned short)(*val);
 		file_id = (unsigned short)(val >> 48);
 		ctl_flag = (unsigned short)(val >> 32);
 		msg_id = (unsigned short)(val >> 16);

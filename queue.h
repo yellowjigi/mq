@@ -6,7 +6,6 @@
 #include <pthread.h>
 
 struct node {
-	//void		*value;
 	long		value;
 	struct node	*next;
 };
@@ -19,9 +18,7 @@ struct queue {
 };
 
 extern struct queue	*init_queue();
-//extern void		enqueue(struct queue *q, void *value);
 extern void		enqueue(struct queue *q, long value);
-//extern void		*dequeue(struct queue *q);
 extern long		dequeue(struct queue *q);
 extern void		print_queue(struct queue *q);
 

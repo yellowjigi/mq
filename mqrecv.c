@@ -9,9 +9,6 @@
 
 #include "crc.h"
 
-//#define DEBUG
-#define ACK_DEBUG
-
 #define INPUT_FILE_NAME_NUM_MAX	3
 
 #define IPC_KEY_PATH		"/root"
@@ -72,7 +69,6 @@ int main(int argc, char *argv[])
 	unsigned short		crc16_received;
 	unsigned short		crc16_computed;
 	unsigned short		msg_id;
-	int cnt = 0;
 	unsigned short		ctl_flag;
 
 	begin = clock();
@@ -128,24 +124,6 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	//if (msgctl(msq_id, IPC_STAT, &msq_id_ds_buf) != 0)
-	//{
-	//	perror("msgctl stat failed");
-
-	//	if (msgctl(msq_id, IPC_RMID, NULL) != 0)
-	//	{
-	//		perror("msgctl rmid failed");
-	//		return 1;
-	//	}
-
-	//	return 1;
-	//}
-
-#ifdef DEBUG
-	//printf("msg_qnum: %d.\n", (int)msq_id_ds_buf.msg_qnum);
-	//printf("msg_qbytes: %d.\n", (int)msq_id_ds_buf.msg_qbytes);
-#endif
-
 	// Set the flag to check later if all the transfer has been completed.
 	flag = (1 << INPUT_FILE_NAME_NUM_MAX) - 1; // 0b111
 
@@ -172,23 +150,19 @@ int main(int argc, char *argv[])
 	// distributes them to the corresponding threads.
 	while ((bytes = msgrcv(msq_id, &msq_msg_ds_buf, MSQ_MSG_BYTES_MAX, 0, 0)) == MSQ_MSG_BYTES_MAX)
 	{
-		printf("mtype 0x%lx.\n", msq_msg_ds_buf.mtype);
-
 		// Retrieve the file identifier.
 		// For convenient access to arrays, subtract 1 here.
 		file_id = (unsigned short)(msq_msg_ds_buf.mtype >> 48) - 1;
 		msg_id = (unsigned short)(msq_msg_ds_buf.mtype >> 16);
 		ctl_flag = (unsigned short)(msq_msg_ds_buf.mtype >> 32);
-		//if (ctl_flag == 2)
-		//{
-		//	printf("file_id: %hu.\n", file_id);
-		//	printf("msg_id: %hu.\n", msg_id);
-		//	printf("ctl_flag: 0x%x.\n", ctl_flag);
-		//}
-		if (ctl_flag == 3)
+#ifdef DEBUG
+		if (ctl_flag == 2)
 		{
-			printf("why sibal?\n");
+			printf("file_id: %hu.\n", file_id);
+			printf("msg_id: %hu.\n", msg_id);
+			printf("ctl_flag: 0x%x.\n", ctl_flag);
 		}
+#endif
 		offset[file_id] = msg_id * MSQ_MSG_BYTES_MAX;
 
 		if (remaining_size[file_id] == 0)
@@ -200,9 +174,6 @@ int main(int argc, char *argv[])
 
 			// 2. Retrieve the metadata (i.e., the file size).
 			memcpy(&remaining_size[file_id], msq_msg_ds_buf.mtext, sizeof(long));
-#ifdef DEBUG
-			printf("File size: %ld.\n", remaining_size[file_id]);
-#endif
 
 			if (remaining_size[file_id] < BUF_SIZE_DEFAULT)
 			{
@@ -225,12 +196,17 @@ int main(int argc, char *argv[])
 
 			crc16_computed = compute_crc16(msq_msg_ds_buf.mtext, MSQ_MSG_BYTES_MAX);
 			crc16_received = (unsigned short)(msq_msg_ds_buf.mtype & 0xFFFF);
-			//printf("CRC 16 received: 0x%x.\n", crc16_received);
-			//printf("CRC 16 computed: 0x%x.\n", crc16_computed);
+
+#ifdef DEBUG
+			printf("CRC 16 computed: 0x%x.\n", crc16_computed);
+			printf("CRC 16 received: 0x%x.\n", crc16_received);
+#endif
 
 			if (crc16_computed == crc16_received)
 			{
-				//printf("CRC 16 verified.\n");
+#ifdef DEBUG
+				printf("CRC 16 verified.\n");
+#endif
 
 				// 1-1. Succeeded.
 				// Aggregate the file data to the buffer.
@@ -240,12 +216,13 @@ int main(int argc, char *argv[])
 				{
 					// This message has been retransmitted.
 					corrupted_count[file_id]--;
-					printf("File ID %02d cor: %d.\n", file_id, corrupted_count[file_id]);
 				}
 			}
 			else
 			{
-				//printf("CRC 16 different.\n");
+#ifdef DEBUG
+				printf("CRC 16 different.\n");
+#endif
 
 				// 1-2. Failed.
 				// Send a message to request a retransmission.
@@ -260,9 +237,6 @@ int main(int argc, char *argv[])
 				corrupted_count[file_id]++;
 			}
 
-#ifdef DEBUG
-			printf("total_progress: %d.\n", total_progress[file_id]);
-#endif
 			if (total_progress[file_id] < write_size[file_id])
 			{
 				total_progress[file_id] += MSQ_MSG_BYTES_MAX;
@@ -271,7 +245,7 @@ int main(int argc, char *argv[])
 			if (total_progress[file_id] >= write_size[file_id])
 			{
 #ifdef DEBUG
-				printf("corrupted cnt: %d.\n", corrupted_count[file_id]);
+				printf("corrupted count: %d.\n", corrupted_count[file_id]);
 #endif
 				// 3. Buffer is ready. Write it to the file
 				// stream and reset total_progress & offset
@@ -284,9 +258,6 @@ int main(int argc, char *argv[])
 					continue;
 				}
 
-#ifdef DEBUG
-				printf("%d.\n", __LINE__);
-#endif
 				if (fwrite(buffer[file_id], write_size[file_id], 1, fp[file_id]) != 1)
 				{
 					if (ferror(fp[file_id]))
@@ -295,6 +266,7 @@ int main(int argc, char *argv[])
 						break;
 					}
 				}
+
 #ifdef DEBUG
 				printf("File ID %02d: %d written.\n", file_id, write_size[file_id]);
 #endif
@@ -308,7 +280,7 @@ int main(int argc, char *argv[])
 					break;
 				}
 
-#ifdef ACK_DEBUG
+#ifdef DEBUG
 				printf("File ID %02d: ACK sent.\n", file_id);
 #endif
 
@@ -346,11 +318,6 @@ int main(int argc, char *argv[])
 			}
 		}
 	}
-#ifdef DEBUG
-	//printf("File 01: #different CRC: %d.\n", cnt[0]);
-	//printf("File 02: #different CRC: %d.\n", cnt[1]);
-	//printf("File 03: #different CRC: %d.\n", cnt[2]);
-#endif
 
 	// Release the lookup table for CRC-16.
 	release_table_crc16();
@@ -399,5 +366,6 @@ int main(int argc, char *argv[])
 	end = clock();
 	elapsed = (double)(end - begin) / CLOCKS_PER_SEC;
 	printf("%lf seconds.\n", elapsed);
+
 	return 0;
 }

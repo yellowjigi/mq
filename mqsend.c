@@ -83,12 +83,6 @@ void *send_fn(void *arg)
 		pthread_exit((void *)1);
 	}
 
-#ifdef DEBUG
-	printf("Thread\n");
-	printf("File name: %s.\n", parms->file_name);
-	printf("File size: %ld.\n", file_size);
-#endif
-
 	// Indicate the file identifier.
 	msq_msg_ds_buf.mtype = (long)parms->file_id << 48;
 
@@ -107,7 +101,6 @@ void *send_fn(void *arg)
 		fprintf(stderr, "load_error_info failed.\n");
 		pthread_exit((void *)1);
 	}
-
 
 	read_size = BUF_SIZE_DEFAULT;
 	bytes_sent = 0;
@@ -161,7 +154,6 @@ void *send_fn(void *arg)
 		// Process the received messages for this block.
 		while (1)
 		{
-			//if ((mtype_ptr = (long *)dequeue(parms->queue)) != NULL)
 			if ((msq_msg_ds_buf.mtype = dequeue(parms->queue)) != -1)
 			{
 				printf("mtype: 0x%lx.\n", msq_msg_ds_buf.mtype);
@@ -180,8 +172,6 @@ void *send_fn(void *arg)
 				// Otherwise, retransmit until we find an ACK.
 				msg_id = (unsigned short)(msq_msg_ds_buf.mtype >> 16);
 
-				//msq_msg_ds_buf.mtype = *mtype_ptr;
-
 				// Reset the control flag & CRC.
 				msq_msg_ds_buf.mtype &= 0xFFFF0000FFFF0000;
 
@@ -190,27 +180,24 @@ void *send_fn(void *arg)
 				memcpy(msq_msg_ds_buf.mtext, pos + offset, MSQ_MSG_BYTES_MAX);
 
 				crc16 = compute_crc16(msq_msg_ds_buf.mtext, MSQ_MSG_BYTES_MAX);
-#ifdef DEBUG
-				//printf("Retransmission CRC: 0x%x.\n", crc16);
-#endif
 
 				msq_msg_ds_buf.mtype |= crc16;
-
-#ifdef DEBUG
-				//printf("Retransmission mtype: 0x%lx.\n", msq_msg_ds_buf.mtype);
-#endif
 				msq_msg_ds_buf.mtype |= (long)CONTROL_FLAG_RE_TX << 32;
 
-				printf("mtype: 0x%lx sent.\n", msq_msg_ds_buf.mtype);
+#ifdef DEBUG
+				printf("Retransmission CRC: 0x%x.\n", crc16);
+				printf("Retransmission mtype: 0x%lx.\n", msq_msg_ds_buf.mtype);
+#endif
+
 				if (msgsnd(parms->msq_id, &msq_msg_ds_buf, MSQ_MSG_BYTES_MAX, 0) != 0)
 				{
 					perror("msgsnd failed");
 					pthread_exit((void *)1);
 				}
-				//printf("%d.\n", __LINE__);
 			}
 		}
 	}
+
 #ifdef DEBUG
 	printf("File ID %02d: error count %hu.\n", parms->file_id, error_count);
 	printf("total %d bytes sent.\n", bytes_sent);
@@ -249,13 +236,6 @@ int main(int argc, char *argv[])
 	struct queue		q[INPUT_FILE_NAME_NUM_MAX];
 	ssize_t			bytes;
 
-	// Check if the input format is valid.
-	//if (argc < 2 || argc > 4)
-	//{
-	//	printf("Usage: %s <file1> <file2> <file3>\n", argv[0]);
-	//	return 0;
-	//}
-
 	if (argc < 2 || argc > 7)
 	{
 		printf("Usage: %s <file1> <file2> <file3> <error_file1> <error_file2> <error_file3>\n", argv[0]);
@@ -292,7 +272,6 @@ int main(int argc, char *argv[])
 	// Prepare the lookup table for CRC-16.
 	build_table_crc16();
 
-	//for (i = 0; i < 1; i++)
 	for (i = 0; i < INPUT_FILE_NAME_NUM_MAX; i++)
 	{
 		parms[i].file_name = file_name[i];
@@ -346,19 +325,18 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 		}
-#ifdef THIS_DEBUG
-		printf("Received mtype 0x%lx.\n", msq_msg_ds_buf_rx.mtype);
-#endif
+
 
 		file_id = (unsigned short)(msq_msg_ds_buf_rx.mtype >> 48) - 1;
-		printf("file_id: %d.\n", file_id);
 
-		//enqueue(parms[file_id].queue, (long *)&msq_msg_ds_buf_rx.mtype);
+#ifdef DEBUG
+		printf("File ID %02d: Received mtype 0x%lx.\n", file_id, msq_msg_ds_buf_rx.mtype);
+#endif
+
 		enqueue(parms[file_id].queue, msq_msg_ds_buf_rx.mtype);
 		print_queue(parms[file_id].queue);
 	}
 
-	//for (i = 0; i < 1; i++)
 	for (i = 0; i < INPUT_FILE_NAME_NUM_MAX; i++)
 	{
 		if (pthread_join(worker_thread[i], NULL))
