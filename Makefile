@@ -1,7 +1,7 @@
 CC = gcc
 
-FLAGS = \
-	-DDEBUG
+FLAGS =
+#	-DDEBUG
 
 INCLUDES = -I.
 
@@ -13,45 +13,34 @@ MQSEND_SRCS = \
 	mqsend.c \
 	fileio.c
 
+MQRECV_SRCS = \
+	mqrecv.c \
+	fileio.c
+
 SHARED = \
 	fileio.h
 
-OBJS = $(MQSEND_SRCS:%.c=%.o)
+MQSEND_OBJS = $(MQSEND_SRCS:%.c=%.o)
+
+MQRECV_OBJS = $(MQRECV_SRCS:%.c=%.o)
 
 BINS = \
-	mqsend
-#mqrecv
+	mqsend \
+	mqrecv
 
 all:	$(BINS)
 
-#gcc -I${INCLUDE_DIR} -o 
-#(cd src; $(MAKE))
-
-mqsend: $(OBJS)
+mqsend: $(MQSEND_OBJS)
 	@echo "target: $@, dep: $(OBJS)"
 	$(CC) -o $@ $^ $(LDFLAGS)
-#$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(MQSEND_SRCS)
-#$(CC) $(CFLAGS) 
-#cp mqsend bin
+
+mqrecv: $(MQRECV_OBJS)
+	@echo "target: $@, dep: $(OBJS)"
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 %.o:	%.c $(SHARED)
 	@echo "target: $@, dep: $^"
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-#mqsend: $(MQSEND_SRCS) bin
-#$(CC) $(CFLAGS) -o $@ $(LDFLAGS) $(MQSEND_SRCS)
-#$(CC) $(CFLAGS) 
-#cp mqsend bin
-
-#bin:
-#	if [ ! -d bin ]; then \
-#		echo "Creating bin"; \
-#		mkdir bin; \
-#	fi
-
 clean:
-	rm -f $(BINS) $(OBJS)
-#(cd src; $(MAKE) clean)
-
-#distclean: clean
-#rm -f bin/*
+	rm -f $(BINS) $(MQSEND_OBJS) $(MQRECV_OBJS)

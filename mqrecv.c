@@ -7,8 +7,6 @@
 #include <sys/msg.h>
 #include <sys/types.h>
 
-#define DEBUG
-
 #define INPUT_FILE_NAME_NUM_MAX	3
 
 #define IPC_KEY_PATH		"/root"
@@ -27,6 +25,7 @@ struct msqmsg_ds {
 int main(int argc, char *argv[])
 {
 	clock_t			begin;
+	char			*buffer[INPUT_FILE_NAME_NUM_MAX];
 	ssize_t			bytes;
 	double			elapsed;
 	clock_t			end;
@@ -36,19 +35,16 @@ int main(int argc, char *argv[])
 					"RecevedFileB.bin",
 					"RecevedFileC.bin"
 				};
-	long			file_size[INPUT_FILE_NAME_NUM_MAX];
 	int			flag;
 	FILE			*fp[INPUT_FILE_NAME_NUM_MAX];
 	int			i;
-	int			offset[INPUT_FILE_NAME_NUM_MAX];
 	key_t			ipc_key;
 	int			msq_id;
 	struct msqid_ds		msq_id_ds_buf;
 	struct msqmsg_ds	msq_msg_ds_buf;
-	int			msq_msg_bytes_max;
+	int			offset[INPUT_FILE_NAME_NUM_MAX];
 	char			*pos[INPUT_FILE_NAME_NUM_MAX];
 	long			remaining_size[INPUT_FILE_NAME_NUM_MAX] = { 0, 0, 0 };
-	char			*buffer[INPUT_FILE_NAME_NUM_MAX];
 	int			write_size[INPUT_FILE_NAME_NUM_MAX];
 
 	begin = clock();
