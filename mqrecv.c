@@ -19,17 +19,14 @@ struct msqmsg_ds {
 	char	mtext[MSQ_MSG_BYTES_MAX];
 };
 
-int main(int argc, char *argv[])
+int start_service()
 {
-	clock_t			begin;
 	char			*buffer[INPUT_FILE_NAME_NUM_MAX];
 	ssize_t			bytes;
 	unsigned short		corrupted_count[INPUT_FILE_NAME_NUM_MAX];
 	unsigned short		crc16_received;
 	unsigned short		crc16_computed;
 	unsigned short		ctl_flag;
-	double			elapsed;
-	clock_t			end;
 	unsigned short		file_id;
 	const char		*file_name[INPUT_FILE_NAME_NUM_MAX] = {
 					"RecevedFileA.bin",
@@ -51,27 +48,16 @@ int main(int argc, char *argv[])
 	int			total_progress[INPUT_FILE_NAME_NUM_MAX];
 	int			write_size[INPUT_FILE_NAME_NUM_MAX];
 
-	begin = clock();
-
-	// Check if the input format is valid.
-	if (argc > 1)
-	{
-		printf("Usage: %s\n", argv[0]);
-		return 0;
-	}
-
 	// For a receiving channel
 	if ((msq_id_rx = msq_get(IPC_KEY_PATH, IPC_KEY_PROJ_ID_ATOB)) < 0)
 	{
-		fprintf(stderr, "msq_get failed.\n");
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 	// For a transmitting channel
 	if ((msq_id_tx = msq_get(IPC_KEY_PATH, IPC_KEY_PROJ_ID_BTOA)) < 0)
 	{
-		fprintf(stderr, "msq_get failed.\n");
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 	// Set the flag to check later if all the transfer has been completed.
@@ -89,7 +75,7 @@ int main(int argc, char *argv[])
 				perror("msgctl rmid failed");
 			}
 
-			return 1;
+			return -1;
 		}
 	}
 
@@ -281,7 +267,7 @@ int main(int argc, char *argv[])
 			perror("msgctl rmid failed");
 		}
 
-		return 1;
+		return -1;
 	}
 
 	// Close the file streams with the corresponding file names.
@@ -296,19 +282,41 @@ int main(int argc, char *argv[])
 				perror("msgctl rmid failed");
 			}
 
-			return 1;
+			return -1;
 		}
 	}
 
 	if (msq_rm(msq_id_rx) < 0)
 	{
-		fprintf(stderr, "msq_rm failed.\n");
-		exit(EXIT_FAILURE);
+		return -1;
 	}
 
 	if (msq_rm(msq_id_tx) < 0)
 	{
-		fprintf(stderr, "msq_rm failed.\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+int main(int argc, char *argv[])
+{
+	clock_t			begin;
+	double			elapsed;
+	clock_t			end;
+
+	begin = clock();
+
+	// Check if the input format is valid.
+	if (argc > 1)
+	{
+		printf("Usage: %s\n", argv[0]);
+		return 0;
+	}
+
+	if (start_service() < 0)
+	{
+		fprintf(stderr, "%s failed.\n", argv[0]);
 		exit(EXIT_FAILURE);
 	}
 

@@ -13,7 +13,8 @@ MQSEND_SRCS = \
 	mqsend.c \
 	fileio.c \
 	crc.c \
-	queue.c
+	queue.c \
+	msq.c
 
 MQRECV_SRCS = \
 	mqrecv.c \
@@ -55,7 +56,7 @@ mqrecv: $(MQRECV_OBJS)
 #	fi
 
 clean:
-	rm -f $(BINS) $(MQRECV_OBJS) $(MQSEND_OBJS)
+	rm -f $(BINS) $(MQRECV_OBJS) $(MQSEND_OBJS) RecevedFileA.bin RecevedFileB.bin RecevedFileC.bin
 
 #distclean: clean
 #rm -f bin/*

@@ -1,21 +1,12 @@
-#include <errno.h>
 #include <pthread.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <sys/ipc.h>
-#include <sys/msg.h>
-#include <sys/types.h>
 
 #include "fileio.h"
 #include "crc.h"
 #include "queue.h"
+#include "msq.h"
 
 #define INPUT_FILE_NAME_NUM_MAX	3
-
-#define IPC_KEY_PATH		"/root"
-#define IPC_KEY_PROJ_ID		65
-#define IPC_KEY_PROJ_ID_RX	66
 
 #define MSQ_MSG_NUM_MAX		32
 #define MSQ_MSG_BYTES_MAX	512
@@ -43,31 +34,25 @@ struct thread_parms {
 // Sending (worker) thread function
 void *send_fn(void *arg)
 {
-	struct thread_parms	*parms = (struct thread_parms *)arg;
-	char			*buffer;
-	FILE			*fp;
-	int			read_size;
-	long			file_size;
-	long			remaining_size;
-	int			msq_id;
-	struct msqid_ds		msq_id_ds_buf;
-	struct msqmsg_ds	msq_msg_ds_buf;
-	int			msq_msg_bytes_max;
-	char			*pos;
-	char			*tmp;
-	int			i;
-	int			cnt = 0;
-	unsigned short		crc16;
-	int			j;
-	int			bytes_sent;
-	int			buffer_e[ERROR_BYTES_NUM_MAX];
-	int			error_count;
-	int			offset;
-	long			mtype_received;
-	unsigned short		msg_id;
 	unsigned short		block_offset;
-	long			*mtype_ptr;
+	char			*buffer;
+	int			buffer_e[ERROR_BYTES_NUM_MAX];
+	int			bytes_sent;
+	unsigned short		crc16;
 	unsigned short		ctl_flag;
+	int			error_count;
+	long			file_size;
+	FILE			*fp;
+	int			i;
+	int			j;
+	unsigned short		msg_id;
+	int			msq_id;
+	struct msqmsg_ds	msq_msg_ds_buf;
+	int			offset;
+	int			read_size;
+	long			remaining_size;
+	struct thread_parms	*parms = (struct thread_parms *)arg;
+	char			*pos;
 
 	buffer = malloc(sizeof *buffer * BUF_SIZE_DEFAULT);
 
@@ -214,27 +199,17 @@ void *send_fn(void *arg)
 
 int main(int argc, char *argv[])
 {
-	int			e;
-	char			*file_name[INPUT_FILE_NAME_NUM_MAX];
-	char			*error_file_name[INPUT_FILE_NAME_NUM_MAX];
-	long			file_size;
-	unsigned short		file_id;
-	FILE			*fp;
-	int			i;
-	key_t			ipc_key;
-	int			j;
-	int			msq_id;
-	int			msq_id_rx;
-	struct msqid_ds		msq_id_ds_buf;
-	struct msqmsg_ds	msq_msg_ds_buf;
-	struct msqmsg_ds	msq_msg_ds_buf_rx;
-	int			msq_msg_bytes_max;
-	char			*pos;
-	char			*tmp;
-	pthread_t		worker_thread[INPUT_FILE_NAME_NUM_MAX];
-	struct thread_parms	parms[INPUT_FILE_NAME_NUM_MAX];
-	struct queue		q[INPUT_FILE_NAME_NUM_MAX];
 	ssize_t			bytes;
+	int			e;
+	char			*error_file_name[INPUT_FILE_NAME_NUM_MAX];
+	unsigned short		file_id;
+	char			*file_name[INPUT_FILE_NAME_NUM_MAX];
+	int			i;
+	int			msq_id_tx;
+	int			msq_id_rx;
+	struct msqmsg_ds	msq_msg_ds_buf_rx;
+	struct thread_parms	parms[INPUT_FILE_NAME_NUM_MAX];
+	pthread_t		worker_thread[INPUT_FILE_NAME_NUM_MAX];
 
 	if (argc < 2 || argc > 7)
 	{
@@ -248,25 +223,9 @@ int main(int argc, char *argv[])
 		error_file_name[i] = argv[i + 4];
 	}
 
-	if ((ipc_key = ftok(IPC_KEY_PATH, IPC_KEY_PROJ_ID)) == -1)
+	if ((msq_id_tx = msq_get(IPC_KEY_PATH, IPC_KEY_PROJ_ID_ATOB)) < 0)
 	{
-		perror("ftok failed\n");
 		return 1;
-	}
-
-	if ((msq_id = msgget(ipc_key, IPC_CREAT | IPC_EXCL | 0644)) == -1)
-	{
-		if (errno == EEXIST)
-		{
-			// The message queue already exists.
-			// Simply retrieve the ID of it.
-			msq_id = msgget(ipc_key, 0);
-		}
-		else
-		{
-			perror("msgget failed");
-			return 1;
-		}
 	}
 
 	// Prepare the lookup table for CRC-16.
@@ -277,7 +236,7 @@ int main(int argc, char *argv[])
 		parms[i].file_name = file_name[i];
 		parms[i].error_file_name = error_file_name[i];
 		parms[i].file_id = i + 1;
-		parms[i].msq_id = msq_id;
+		parms[i].msq_id = msq_id_tx;
 		parms[i].queue = init_queue();
 
 		if ((e = pthread_create(&worker_thread[i], NULL, send_fn, (void *)&parms[i])) != 0)
@@ -289,25 +248,9 @@ int main(int argc, char *argv[])
 
 	// Main thread will receive ACKs and distribute
 	// them to the worker threads.
-	if ((ipc_key = ftok(IPC_KEY_PATH, IPC_KEY_PROJ_ID_RX)) == -1)
+	if ((msq_id_rx = msq_get(IPC_KEY_PATH, IPC_KEY_PROJ_ID_BTOA)) < 0)
 	{
-		perror("ftok failed\n");
 		return 1;
-	}
-
-	if ((msq_id_rx = msgget(ipc_key, IPC_CREAT | IPC_EXCL | 0644)) == -1)
-	{
-		if (errno == EEXIST)
-		{
-			// The message queue already exists.
-			// Simply retrieve the ID of it.
-			msq_id_rx = msgget(ipc_key, 0);
-		}
-		else
-		{
-			perror("msgget failed");
-			return 1;
-		}
 	}
 	
 	while (1)
