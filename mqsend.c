@@ -156,18 +156,18 @@ void *send_fn(void *arg)
 		{
 			if ((msq_msg_ds_buf.mtype = dequeue(parms->queue)) != -1)
 			{
+#ifdef DEBUG
 				printf("mtype: 0x%lx.\n", msq_msg_ds_buf.mtype);
+#endif
 
 				ctl_flag = (unsigned short)(msq_msg_ds_buf.mtype >> 32);
 				if (ctl_flag & CONTROL_FLAG_ACK)
 				{
-					printf("%d.\n", __LINE__);
 					// If this is an ACK, move on to the next block.
 					// Don't forget to reset the type field.
 					msq_msg_ds_buf.mtype &= 0xFFFF000000000000;
 					break;
 				}
-				printf("%d.\n", __LINE__);
 
 				// Otherwise, retransmit until we find an ACK.
 				msg_id = (unsigned short)(msq_msg_ds_buf.mtype >> 16);
@@ -334,7 +334,9 @@ int main(int argc, char *argv[])
 #endif
 
 		enqueue(parms[file_id].queue, msq_msg_ds_buf_rx.mtype);
+#ifdef DEBUG
 		print_queue(parms[file_id].queue);
+#endif
 	}
 
 	for (i = 0; i < INPUT_FILE_NAME_NUM_MAX; i++)
