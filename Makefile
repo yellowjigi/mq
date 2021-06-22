@@ -1,7 +1,7 @@
 CC = gcc
 
-FLAGS = \
-	-DTHIS_DEBUG
+FLAGS =
+#	-DDEBUG
 
 INCLUDES = -I.
 
@@ -15,37 +15,36 @@ MQSEND_SRCS = \
 	crc.c \
 	queue.c
 
+MQRECV_SRCS = \
+	mqrecv.c \
+	fileio.c \
+	crc.c
+
 SHARED = \
 	fileio.h \
 	crc.h \
 	queue.h
 
-OBJS = $(MQSEND_SRCS:%.c=%.o)
+MQSEND_OBJS = $(MQSEND_SRCS:%.c=%.o)
+MQRECV_OBJS = $(MQRECV_SRCS:%.c=%.o)
 
 BINS = \
-	mqsend
-#mqrecv
+	mqsend \
+	mqrecv
 
 all:	$(BINS)
 
-#gcc -I${INCLUDE_DIR} -o 
-#(cd src; $(MAKE))
-
-mqsend: $(OBJS)
+mqsend: $(MQSEND_OBJS)
 	@echo "target: $@, dep: $(OBJS)"
 	$(CC) -o $@ $^ $(LDFLAGS)
-#$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(MQSEND_SRCS)
-#$(CC) $(CFLAGS) 
-#cp mqsend bin
+
+mqrecv: $(MQRECV_OBJS)
+	@echo "target: $@, dep: $(OBJS)"
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 %.o:	%.c $(SHARED)
 	@echo "target: $@, dep: $^"
 	$(CC) $(CFLAGS) -c -o $@ $<
-
-#mqsend: $(MQSEND_SRCS) bin
-#$(CC) $(CFLAGS) -o $@ $(LDFLAGS) $(MQSEND_SRCS)
-#$(CC) $(CFLAGS) 
-#cp mqsend bin
 
 #bin:
 #	if [ ! -d bin ]; then \
@@ -54,8 +53,7 @@ mqsend: $(OBJS)
 #	fi
 
 clean:
-	rm -f $(BINS) $(OBJS)
-#(cd src; $(MAKE) clean)
+	rm -f $(BINS) $(MQRECV_OBJS) $(MQSEND_OBJS)
 
 #distclean: clean
 #rm -f bin/*
